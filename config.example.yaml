@@ -1,0 +1,66 @@
+# Starting point for pdfx. `./setup.sh` overwrites config.yaml with values
+# chosen from detected hardware; copy this file if you would rather hand-tune.
+#
+#   cp config.example.yaml config.yaml
+
+hardware_note: "hand-written config"
+
+ollama:
+  host: 127.0.0.1
+  port: 11434
+  # glm-ocr:latest is 2.2 GB, glm-ocr:q8_0 is 1.6 GB.
+  model: glm-ocr:latest
+  # Ollama's OpenAI-compatible endpoint returns 502 on vision requests;
+  # upstream GLM-OCR recommends the native /api/generate path. Switch to
+  # "openai" only when pointing at vLLM or SGLang instead.
+  api_mode: generate
+  timeout_s: 180.0
+  retries: 3
+  retry_backoff_s: 2.0
+  temperature: 0.0
+  # How long Ollama keeps the model resident between pages.
+  keep_alive: 10m
+
+render:
+  # Applies to scanned pages only; pages with a text layer are never rasterised.
+  dpi: 200
+  # Hard cap on the long edge, so an A0 drawing cannot exhaust memory.
+  max_long_edge_px: 1600
+  grayscale: false
+
+router:
+  # Below this many extractable characters, a page is treated as an image.
+  min_chars: 60
+  min_text_area_ratio: 0.005
+  # A single image covering this much of the page looks like a scan.
+  full_page_image_ratio: 0.55
+  # Above this share of undecodable glyphs the text layer is junk and the page
+  # is re-read by the VLM instead of trusted.
+  max_garbage_ratio: 0.12
+  # Pages with both a text layer and a big image go to the VLM, keeping their
+  # native text for the numeric cross-check.
+  vlm_for_mixed_pages: true
+
+validation:
+  enabled: true
+  # auto reads 1'234.56, 1.234,56 and 1,234.56 all correctly by keeping
+  # ambiguous tokens open. Force with ch, de or us if your corpus is uniform.
+  number_locale: auto
+  abs_tolerance: 0.0
+  # Set to high or medium to make `pdfx extract` exit non-zero when the model
+  # and the deterministic reading disagree. Useful in a batch job.
+  fail_on_severity: none
+  # Second deterministic opinion for scanned pages with no text layer at all.
+  # Needs: pip install 'pdfx[tesseract]' and brew install tesseract
+  tesseract_fallback: false
+
+pipeline:
+  # auto uses Docling when installed and falls back to pymupdf.
+  native_backend: auto
+  # Ollama serialises per model, so 1-2 is the useful range.
+  max_workers: 2
+  default_task: Text Recognition
+  table_prompt_for_table_pages: false
+  # page_range: "1-5,9"
+
+output_dir: out

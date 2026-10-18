@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdfx"
+version = "0.1.0"
+description = "Self-hosted hybrid PDF extraction: native text layer routing + local GLM-OCR VLM, with deterministic numeric cross-checking."
+requires-python = ">=3.10"
+dependencies = [
+    "pymupdf>=1.24",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Docling brings torch + HF models (~2-3 GB on first run). Optional so the core
+# pipeline stays installable and testable without it.
+docling = ["docling>=2.0"]
+# Deterministic OCR cross-check for scanned pages with no text layer at all.
+tesseract = ["pytesseract>=0.3.10"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+pdfx = "pdfx.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
