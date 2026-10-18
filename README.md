@@ -52,8 +52,14 @@ source .venv/bin/activate
 pdfx route   report.pdf     # what would be sent to the model — no inference, instant
 pdfx extract report.pdf     # writes out/report.md and out/report.json
 pdfx extract scans/ --out results/
+pdfx batch   inbox/         # extract every PDF in inbox/, then move each to input/
 pdfx doctor                 # is Ollama up, is the model pulled, is Docling importable
 ```
+
+`batch` moves each PDF as soon as it is done, so an interrupted run resumes
+where it stopped. It keeps subfolders, leaves a PDF in place if any page failed
+or `input/` already has a file of that name, and accepts a directory only.
+Change the destination with `--move-to`.
 
 `pdfx route` first is worth the habit. It tells you how much of a document is
 actually going to cost inference before you spend it:
@@ -154,8 +160,8 @@ src/pdfx/
   vlm.py        GLM-OCR client (retries, health check, both API shapes)
   validate.py   locale-aware number parsing and the cross-check
   pipeline.py   orchestration, per-page provenance, Markdown/JSON output
-  cli.py        extract / route / doctor
-tests/          85 tests, no network, no model — synthetic PDFs + a stand-in Ollama
+  cli.py        extract / batch / route / doctor
+tests/          89 tests, no network, no model — synthetic PDFs + a stand-in Ollama
 ```
 
 ## Tests
@@ -164,7 +170,7 @@ tests/          85 tests, no network, no model — synthetic PDFs + a stand-in O
 make test
 ```
 
-85 tests, no network and no model required. Synthetic PDFs cover each routing
+89 tests, no network and no model required. Synthetic PDFs cover each routing
 branch (native, scanned, blank, mixed, corrupt text layer) and a stand-in Ollama
 covers the VLM path, including simulated 502s and retry behaviour. The pipeline
 tests assert the load-bearing behaviours directly: a page with a real text layer

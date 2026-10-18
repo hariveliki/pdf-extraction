@@ -2,6 +2,7 @@
 
     pdfx extract report.pdf
     pdfx extract scans/ --out out/ --config config.yaml
+    pdfx batch inbox/              # extract every PDF, then move each one to input/
     pdfx route report.pdf          # routing decisions only, no model calls
     pdfx doctor                    # is the local stack actually ready?
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -46,6 +48,17 @@ def _collect_pdfs(target: Path) -> list[Path]:
     return [target]
 
 
+def _move_processed(pdf: Path, source_root: Path, dest_root: Path) -> None:
+    """Move a processed PDF under dest_root, keeping its path relative to source_root."""
+    target = dest_root / pdf.relative_to(source_root)
+    if target.exists():
+        print(f"  not moved:  {target} already exists", file=sys.stderr)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(pdf, target)
+    print(f"  moved:      {target}")
+
+
 def _apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
     if getattr(args, "model", None):
         cfg.ollama.model = args.model
@@ -71,7 +84,15 @@ def _apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
 
 def cmd_extract(args: argparse.Namespace) -> int:
     cfg = _apply_overrides(Config.load(args.config), args)
-    pdfs = _collect_pdfs(Path(args.input))
+    source = Path(args.input)
+    pdfs = _collect_pdfs(source)
+    move_to = Path(args.move_to) if getattr(args, "move_to", None) else None
+    if move_to and not source.is_dir():
+        raise ValueError("batch needs a directory, not a single file")
+    if move_to:
+        pdfs = [p for p in pdfs if not p.resolve().is_relative_to(move_to.resolve())]
+        if not pdfs:
+            raise SystemExit(f"no PDFs to process under {source} outside {move_to}")
     pipeline = Pipeline(cfg)
 
     exit_code = EXIT_OK
@@ -115,6 +136,9 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
         print(f"  wrote:      {md_path}")
         print(f"              {json_path}")
+
+        if move_to and not result.failed_pages:
+            _move_processed(pdf, source, move_to)
 
         if severity_at_least(result.worst_severity, cfg.validation.fail_on_severity):
             exit_code = max(exit_code, EXIT_VALIDATION)
@@ -220,6 +244,22 @@ def _blank_png() -> bytes:
 # ---- parser ---------------------------------------------------------------
 
 
+def _add_extract_options(p: argparse.ArgumentParser) -> None:
+    p.add_argument("-o", "--out", help="output directory")
+    p.add_argument("--pages", help='page range, e.g. "1-5,9"')
+    p.add_argument("--model", help="override the Ollama model tag")
+    p.add_argument("--dpi", type=int, help="rasterisation DPI for VLM pages")
+    p.add_argument("--workers", type=int, help="concurrent VLM requests")
+    p.add_argument(
+        "--backend", choices=["auto", "docling", "pymupdf"],
+        help="native text extraction backend",
+    )
+    p.add_argument("--no-validate", action="store_true",
+                   help="skip the numeric cross-check")
+    p.add_argument("--tesseract", action="store_true",
+                   help="use Tesseract as a second opinion on pages with no text layer")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pdfx",
@@ -235,20 +275,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     extract = sub.add_parser("extract", help="extract one PDF or a folder of PDFs")
     extract.add_argument("input", help="PDF file or directory")
-    extract.add_argument("-o", "--out", help="output directory")
-    extract.add_argument("--pages", help='page range, e.g. "1-5,9"')
-    extract.add_argument("--model", help="override the Ollama model tag")
-    extract.add_argument("--dpi", type=int, help="rasterisation DPI for VLM pages")
-    extract.add_argument("--workers", type=int, help="concurrent VLM requests")
-    extract.add_argument(
-        "--backend", choices=["auto", "docling", "pymupdf"],
-        help="native text extraction backend",
-    )
-    extract.add_argument("--no-validate", action="store_true",
-                         help="skip the numeric cross-check")
-    extract.add_argument("--tesseract", action="store_true",
-                         help="use Tesseract as a second opinion on pages with no text layer")
+    _add_extract_options(extract)
     extract.set_defaults(func=cmd_extract)
+
+    batch = sub.add_parser(
+        "batch",
+        help="extract every PDF in a folder, then move each one to input/",
+    )
+    batch.add_argument("input", help="directory of PDFs")
+    batch.add_argument("--move-to", default="input",
+                       help="where processed PDFs go (default: input)")
+    _add_extract_options(batch)
+    batch.set_defaults(func=cmd_extract)
 
     route = sub.add_parser("route", help="show routing decisions without calling the model")
     route.add_argument("input", help="PDF file or directory")

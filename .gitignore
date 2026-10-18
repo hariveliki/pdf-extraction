@@ -8,3 +8,4 @@ config.yaml.bak.*
 .ollama-serve.log
 input/
 .DS_Store
+batch-in/
